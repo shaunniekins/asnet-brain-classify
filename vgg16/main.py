@@ -1,4 +1,4 @@
-# v1
+# v2
 
 """
 !apt-get update
@@ -102,8 +102,17 @@ valid_df, ts_df = train_test_split(ts_df, train_size=0.5, random_state=20, strat
 BATCH_SIZE = 32 * tpu_strategy.num_replicas_in_sync  # Scales with TPU cores
 IMAGE_SIZE = (299, 299)
 
-_gen = ImageDataGenerator(rescale=1/255,
-                          brightness_range=(0.8, 1.2))
+_gen = ImageDataGenerator(
+    rescale=1/255,
+    brightness_range=(0.8, 1.2),
+    rotation_range=10,  
+    width_shift_range=0.05,  
+    height_shift_range=0.05, 
+    shear_range=0.05, 
+    zoom_range=0.05,  
+    horizontal_flip=True, 
+    fill_mode='nearest'
+)
 
 ts_gen = ImageDataGenerator(rescale=1/255)
 
@@ -135,15 +144,7 @@ grid_size = int(np.ceil(np.sqrt(n_images)))  # Make a square grid
 # Create the plot
 plt.figure(figsize=(20, 20))
 
-# Option 1: Show only the first 16 images
-# for i, (image, label) in enumerate(zip(images[:16], labels[:16])):
-#     plt.subplot(4, 4, i + 1)
-#     plt.imshow(image)
-#     class_name = classes[np.argmax(label)]
-#     plt.title(class_name, color='k', fontsize=15)
-#     plt.axis('off')
-
-# Option 2: Show all images in a dynamic grid (uncomment to use)
+# Show all images in a dynamic grid (uncomment to use)
 for i, (image, label) in enumerate(zip(images, labels)):
     plt.subplot(grid_size, grid_size, i + 1)
     plt.imshow(image)
@@ -185,7 +186,7 @@ class SAM(Model):
         pool2 = Reshape((1, 1, self.filters // 4))(pool2)
         merge2 = self.W2(pool2)
 
-        out3 = merge1 + merge2
+        out3 = tf.keras.activations.relu(merge1 + merge2)
         y = Multiply()([out1, out3]) + out2
         return y
 
@@ -213,8 +214,11 @@ class CAM(Model):
         out2 = self.conv4(inputs)
         out3 = self.fc2(self.fc1(self.gpool(out2)))
         out3 = Reshape((1, 1, self.filters // 4))(out3)
+
+        
+        out3 = tf.keras.activations.relu(out3) 
         y = Multiply()([out1, out3]) + out2
-        return y
+        return y 
 
 
 class ResizeLayer(Layer):
@@ -236,7 +240,7 @@ def adjust_feature_map(x, target_shape):
     return x
 
 
-# Modified AS_Net with VGG16 encoder
+
 def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None):
     inputs = Input(input_size)
     print(f'CURRENT ENCODER: {encoder}')
@@ -316,38 +320,43 @@ tf.keras.utils.plot_model(model, show_shapes=True)
 
 
 # 4. Training
-num_epochs = 25
+num_epochs = 20
 hist = model.fit(tr_gen,
                  epochs=num_epochs,
                  validation_data=valid_gen,
                  shuffle=False)
 
 """
-Epoch 1/25
-357/357 [==============================] - 105s 295ms/step - loss: 0.4890 - accuracy: 0.8227 - precision: 0.8722 - recall: 0.7600 - val_loss: 0.5377 - val_accuracy: 0.8427 - val_precision: 0.8610 - val_recall: 0.8321
-Epoch 2/25
-357/357 [==============================] - 95s 265ms/step - loss: 0.2532 - accuracy: 0.9116 - precision: 0.9257 - recall: 0.9002 - val_loss: 1.6921 - val_accuracy: 0.6260 - val_precision: 0.6263 - val_recall: 0.6244
-Epoch 3/25
-357/357 [==============================] - 95s 265ms/step - loss: 0.1808 - accuracy: 0.9396 - precision: 0.9454 - recall: 0.9310 - val_loss: 0.3123 - val_accuracy: 0.8901 - val_precision: 0.8995 - val_recall: 0.8885
-Epoch 4/25
-357/357 [==============================] - 95s 266ms/step - loss: 0.1211 - accuracy: 0.9611 - precision: 0.9649 - recall: 0.9573 - val_loss: 0.2849 - val_accuracy: 0.9160 - val_precision: 0.9240 - val_recall: 0.9099
-Epoch 5/25
-357/357 [==============================] - 95s 266ms/step - loss: 0.1083 - accuracy: 0.9645 - precision: 0.9674 - recall: 0.9601 - val_loss: 0.3223 - val_accuracy: 0.9206 - val_precision: 0.9377 - val_recall: 0.9191
-Epoch 6/25
-357/357 [==============================] - 95s 265ms/step - loss: 0.0772 - accuracy: 0.9750 - precision: 0.9775 - recall: 0.9720 - val_loss: 0.5369 - val_accuracy: 0.8046 - val_precision: 0.8111 - val_recall: 0.8000
-Epoch 7/25
-357/357 [==============================] - 95s 265ms/step - loss: 0.0695 - accuracy: 0.9793 - precision: 0.9816 - recall: 0.9785 - val_loss: 0.7658 - val_accuracy: 0.7802 - val_precision: 0.7819 - val_recall: 0.7771
-Epoch 8/25
-357/357 [==============================] - 95s 265ms/step - loss: 0.0652 - accuracy: 0.9795 - precision: 0.9812 - recall: 0.9778 - val_loss: 0.5317 - val_accuracy: 0.8733 - val_precision: 0.8731 - val_recall: 0.8718
-Epoch 9/25
-357/357 [==============================] - 95s 265ms/step - loss: 0.0456 - accuracy: 0.9853 - precision: 0.9861 - recall: 0.9841 - val_loss: 0.0777 - val_accuracy: 0.9756 - val_precision: 0.9756 - val_recall: 0.9756
-Epoch 10/25
-357/357 [==============================] - 95s 266ms/step - loss: 0.0470 - accuracy: 0.9853 - precision: 0.9858 - recall: 0.9839 - val_loss: 0.3544 - val_accuracy: 0.9267 - val_precision: 0.9267 - val_recall: 0.9267
+Epoch 1/20
+179/179 [==============================] - 180s 1s/step - loss: 0.5322 - accuracy: 0.8043 - precision: 0.8730 - recall: 0.7302 - val_loss: 1.8924 - val_accuracy: 0.5710 - val_precision: 0.5719 - val_recall: 0.5649
+Epoch 2/20
+179/179 [==============================] - 171s 954ms/step - loss: 0.2701 - accuracy: 0.9086 - precision: 0.9241 - recall: 0.8867 - val_loss: 0.3710 - val_accuracy: 0.8947 - val_precision: 0.9023 - val_recall: 0.8885
+Epoch 3/20
+179/179 [==============================] - 173s 965ms/step - loss: 0.1929 - accuracy: 0.9359 - precision: 0.9453 - recall: 0.9266 - val_loss: 0.2690 - val_accuracy: 0.9176 - val_precision: 0.9209 - val_recall: 0.9069
+Epoch 4/20
+179/179 [==============================] - 175s 977ms/step - loss: 0.1536 - accuracy: 0.9503 - precision: 0.9574 - recall: 0.9435 - val_loss: 1.9208 - val_accuracy: 0.5908 - val_precision: 0.5923 - val_recall: 0.5878
+Epoch 5/20
+179/179 [==============================] - 172s 960ms/step - loss: 0.1305 - accuracy: 0.9601 - precision: 0.9644 - recall: 0.9547 - val_loss: 0.6363 - val_accuracy: 0.8382 - val_precision: 0.8457 - val_recall: 0.8366
+Epoch 6/20
+179/179 [==============================] - 168s 939ms/step - loss: 0.1083 - accuracy: 0.9669 - precision: 0.9712 - recall: 0.9606 - val_loss: 0.4020 - val_accuracy: 0.8779 - val_precision: 0.8947 - val_recall: 0.8687
+Epoch 7/20
+179/179 [==============================] - 170s 947ms/step - loss: 0.0848 - accuracy: 0.9730 - precision: 0.9760 - recall: 0.9702 - val_loss: 0.2511 - val_accuracy: 0.9328 - val_precision: 0.9386 - val_recall: 0.9328
+Epoch 8/20
+179/179 [==============================] - 170s 947ms/step - loss: 0.0698 - accuracy: 0.9785 - precision: 0.9798 - recall: 0.9762 - val_loss: 0.4938 - val_accuracy: 0.8718 - val_precision: 0.8729 - val_recall: 0.8702
+Epoch 9/20
+179/179 [==============================] - 167s 935ms/step - loss: 0.0558 - accuracy: 0.9806 - precision: 0.9824 - recall: 0.9781 - val_loss: 0.4125 - val_accuracy: 0.8901 - val_precision: 0.8942 - val_recall: 0.8901
+Epoch 10/20
+179/179 [==============================] - 163s 912ms/step - loss: 0.0737 - accuracy: 0.9767 - precision: 0.9783 - recall: 0.9725 - val_loss: 0.2063 - val_accuracy: 0.9542 - val_precision: 0.9585 - val_recall: 0.9527
+Epoch 11/20
+179/179 [==============================] - 166s 930ms/step - loss: 0.0571 - accuracy: 0.9818 - precision: 0.9842 - recall: 0.9806 - val_loss: 0.2166 - val_accuracy: 0.9511 - val_precision: 0.9555 - val_recall: 0.9496
+Epoch 12/20
+179/179 [==============================] - 168s 940ms/step - loss: 0.0335 - accuracy: 0.9900 - precision: 0.9905 - recall: 0.9886 - val_loss: 0.5360 - val_accuracy: 0.8840 - val_precision: 0.8853 - val_recall: 0.8840
+Epoch 13/20
 ...
-Epoch 24/25
-357/357 [==============================] - 95s 266ms/step - loss: 0.0316 - accuracy: 0.9881 - precision: 0.9886 - recall: 0.9879 - val_loss: 0.3443 - val_accuracy: 0.9115 - val_precision: 0.9177 - val_recall: 0.9023
-Epoch 25/25
-357/357 [==============================] - 95s 265ms/step - loss: 0.0227 - accuracy: 0.9926 - precision: 0.9930 - recall: 0.9925 - val_loss: 0.1348 - val_accuracy: 0.9725 - val_precision: 0.9740 - val_recall: 0.9710
+Epoch 19/20
+179/179 [==============================] - 166s 929ms/step - loss: 0.0203 - accuracy: 0.9939 - precision: 0.9946 - recall: 0.9935 - val_loss: 0.4312 - val_accuracy: 0.8947 - val_precision: 0.8972 - val_recall: 0.8931
+Epoch 20/20
+179/179 [==============================] - 167s 936ms/step - loss: 0.0231 - accuracy: 0.9923 - precision: 0.9932 - recall: 0.9912 - val_loss: 0.0789 - val_accuracy: 0.9847 - val_precision: 0.9862 - val_recall: 0.9832
 """
 
 hist.history.keys()
@@ -443,14 +452,14 @@ print(f"Test Accuracy: {test_score[1]*100:.2f}%")
 
 
 """
-Train Loss: 0.0027
-Train Accuracy: 99.91%
+Train Loss: 0.0076
+Train Accuracy: 99.72%
 --------------------
-Validation Loss: 0.1006
-Validation Accuracy: 97.71%
+Validation Loss: 0.0388
+Validation Accuracy: 98.78%
 --------------------
-Test Loss: 0.1041
-Test Accuracy: 97.71%
+Test Loss: 0.0564
+Test Accuracy: 98.63%
 """
 
 preds = model.predict(ts_gen)
@@ -470,14 +479,14 @@ print(clr)
 """
               precision    recall  f1-score   support
 
-           0       0.99      0.95      0.97       150
-           1       0.95      0.95      0.95       153
-           2       1.00      1.00      1.00       203
-           3       0.96      1.00      0.98       150
+           0       1.00      0.97      0.99       150
+           1       0.96      0.99      0.97       153
+           2       1.00      0.99      0.99       203
+           3       0.99      1.00      0.99       150
 
-    accuracy                           0.98       656
-   macro avg       0.98      0.98      0.98       656
-weighted avg       0.98      0.98      0.98       656
+    accuracy                           0.99       656
+   macro avg       0.99      0.99      0.99       656
+weighted avg       0.99      0.99      0.99       656
 """
 
 ## 5.2 Testing
@@ -505,10 +514,32 @@ def predict(img_path):
     plt.show()
 
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-meTr_0000.jpg')
-# it predicted "glioma" with 1.00 probability
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-me_0010.jpg')
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-me_0030.jpg')
+# it predicted "meningioma" with 1.00 probability
+
+
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-glTr_0007.jpg')
-# it predicted "glioma" with 1.00 probability
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-gl_0017.jpg')
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-gl_0037.jpg')
+# it predicted "meningioma" with 1.00 probability
+
+
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-noTr_0001.jpg')
-# it predicted "glioma" with 1.00 probability
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-no_0011.jpg')
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-no_0031.jpg')
+# it predicted "meningioma" with 1.00 probability
+
+
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-piTr_0001.jpg')
-# it predicted "glioma" with 1.00 probability
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-pi_0011.jpg')
+# it predicted "meningioma" with 1.00 probability
+predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-pi_0031.jpg')
+# it predicted "meningioma" with 1.00 probability
