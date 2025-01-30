@@ -1,4 +1,4 @@
-# v3.2.1
+# v3.2.2
 
 """
 !apt-get update
@@ -25,8 +25,9 @@ from sklearn.metrics import classification_report, confusion_matrix
 # ---------------------------------------
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import BatchNormalization, Dense, Dropout, Flatten, Conv2D, concatenate, Multiply, GlobalMaxPooling2D, GlobalAveragePooling2D, Reshape, Layer
+from tensorflow.keras.layers import BatchNormalization, Dense, Dropout, Conv2D, concatenate, Multiply, GlobalMaxPooling2D, GlobalAveragePooling2D, Reshape, Layer
 from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.metrics import Precision, Recall
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import VGG16
 from tensorflow.keras import Input
@@ -85,7 +86,7 @@ plt.title('Count of images in each class', fontsize=20)
 ax.bar_label(ax.containers[0])
 plt.show()
 
-#Count each class in test data
+# Count each class in test data
 plt.figure(figsize=(15, 7))
 ax = sns.countplot(y=ts_df['Class'], palette='viridis')
 
@@ -118,16 +119,15 @@ def prepare_data(tr_df, ts_df):
 def get_augmentation():
     return ImageDataGenerator(
         rescale=1/255,
-        brightness_range=(0.7, 1.3),
-        rotation_range=30,
-        width_shift_range=0.2,
-        height_shift_range=0.2,
-        shear_range=0.15,
-        zoom_range=0.15,
+        brightness_range=(0.85, 1.15),  # Reduced range
+        rotation_range=20,              # Reduced rotation
+        width_shift_range=0.1,          # Reduced shift
+        height_shift_range=0.1,
+        shear_range=0.1,
+        zoom_range=0.1,
         horizontal_flip=True,
-        vertical_flip=True,
-        fill_mode='reflect',
-        preprocessing_function=lambda x: np.clip(x + np.random.normal(0, 0.1, x.shape), 0, 1)
+        fill_mode='reflect'
+        # Removed the random noise augmentation as it was too aggressive
     )
 
 _gen = get_augmentation()
@@ -256,7 +256,7 @@ def adjust_feature_map(x, target_shape):
 
 
 # Modified AS_Net with VGG16 encoder
-def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None, reg_factor=0.01):
+def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None, reg_factor=0.001):  # Reduced reg_factor
     inputs = Input(input_size)
     print(f'CURRENT ENCODER: {encoder}')
 
@@ -300,17 +300,19 @@ def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None, reg_fac
 
     # Final classification layers (added more layers and dropout)
     final_layers = Sequential([
-        Conv2D(128, 3, activation='relu', padding='same',
-               kernel_regularizer=l1_l2(reg_factor, reg_factor)),
+        Conv2D(256, 3, activation='relu', padding='same',
+               kernel_regularizer=l1_l2(reg_factor/10, reg_factor/10)),  # Reduced regularization
         BatchNormalization(),
         GlobalAveragePooling2D(),
-        Flatten(),
-        Dropout(0.5),  # Increased dropout to prevent overfitting
-        Dense(128, activation='relu', kernel_initializer='he_normal',
-              kernel_regularizer=l1_l2(reg_factor, reg_factor)),
-        Dropout(0.3),
-        Dense(4, activation='softmax', kernel_initializer='he_normal',
-              kernel_regularizer=l1_l2(reg_factor, reg_factor))  # 4 classes, adjust if needed
+        Dense(512, activation='relu', kernel_initializer='he_normal',
+              kernel_regularizer=l1_l2(reg_factor/10, reg_factor/10)),
+        BatchNormalization(),
+        Dropout(0.3),  # Reduced dropout
+        Dense(256, activation='relu', kernel_initializer='he_normal',
+              kernel_regularizer=l1_l2(reg_factor/10, reg_factor/10)),
+        BatchNormalization(),
+        Dropout(0.2),  # Reduced dropout
+        Dense(4, activation='softmax', kernel_initializer='he_normal')
     ])
 
     output = final_layers(combined)
@@ -321,24 +323,28 @@ def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None, reg_fac
 # Create and compile the model
 with tpu_strategy.scope():
     # Create and compile the model
-    model = AS_Net(encoder='vgg16', fine_tune_at=15)
+    model = AS_Net(encoder='vgg16', fine_tune_at=15, reg_factor=0.001)
     
-    # Create the learning rate scheduler
-    lr_scheduler = tf.keras.optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=1e-5,  # Initial learning rate for the scheduler
-        decay_steps=36,
-        decay_rate=0.98, 
-        staircase=True
+    # Modified learning rate scheduler
+    lr_scheduler = tf.keras.optimizers.schedules.CosineDecayRestarts(
+        initial_learning_rate=1e-4,  # Increased initial learning rate
+        first_decay_steps=1000,
+        t_mul=2.0,
+        m_mul=0.9,
+        alpha=1e-5
     )
 
-    # Create Adam optimizer with the learning rate scheduler
-    optimizer = Adam(learning_rate=lr_scheduler)
+    optimizer = Adam(learning_rate=lr_scheduler, beta_1=0.9, beta_2=0.999)
+    
+    # Fixed metrics instantiation
+    precision_metric = Precision(name='precision')
+    recall_metric = Recall(name='recall')
     
     model.compile(
         optimizer=optimizer,
         loss='categorical_crossentropy',
-        metrics=['accuracy', 'Precision', 'Recall'],  # Use string identifiers instead of metric instances
-        steps_per_execution=32  # Added steps_per_execution for TPU optimization
+        metrics=['accuracy', precision_metric, recall_metric],  # Pass metric instances
+        steps_per_execution=32
     )
 
 model.summary()
@@ -356,34 +362,51 @@ tensorboard_callback = tf.keras.callbacks.TensorBoard(
 early_stopping = tf.keras.callbacks.EarlyStopping(
     monitor='val_loss', patience=3, restore_best_weights=True)
 
+# Add learning rate scheduler callback
+lr_callback = tf.keras.callbacks.ReduceLROnPlateau(
+    monitor='val_loss',
+    factor=0.5,
+    patience=2,
+    min_lr=1e-6,
+    verbose=1
+)
+
+# Modified training configuration
 hist = model.fit(
     tr_gen,
     epochs=num_epochs,
     validation_data=valid_gen,
-    shuffle=False,
-    callbacks=[early_stopping, tensorboard_callback]  # Add the early stopping callback
+    shuffle=True,  # Enable shuffling
+    class_weight={  # Add class weights to handle imbalance
+        0: 1.0,
+        1: 1.0,
+        2: 1.0,
+        3: 1.0
+    },
+    callbacks=[
+        early_stopping,
+        tensorboard_callback,
+        lr_callback
+    ]
 )
 
 """
-Epoch 1/20
-179/179 [==============================] - 264s 1s/step - loss: 133.7235 - accuracy: 0.3316 - precision: 1.0000 - recall: 0.0021 - val_loss: 127.4339 - val_accuracy: 0.3099 - val_precision: 0.3099 - val_recall: 0.3099
-Epoch 2/20
-179/179 [==============================] - 213s 1s/step - loss: 120.2188 - accuracy: 0.3704 - precision: 0.8099 - recall: 0.0201 - val_loss: 114.8871 - val_accuracy: 0.2229 - val_precision: 0.2229 - val_recall: 0.2229
-Epoch 3/20
-179/179 [==============================] - 215s 1s/step - loss: 108.9199 - accuracy: 0.3902 - precision: 0.7429 - recall: 0.0506 - val_loss: 105.4940 - val_accuracy: 0.3084 - val_precision: 0.3084 - val_recall: 0.3084
-Epoch 4/20
-179/179 [==============================] - 216s 1s/step - loss: 99.4301 - accuracy: 0.4186 - precision: 0.7428 - recall: 0.0769 - val_loss: 96.0005 - val_accuracy: 0.2809 - val_precision: 0.6111 - val_recall: 0.0168
-Epoch 5/20
-179/179 [==============================] - 214s 1s/step - loss: 91.4056 - accuracy: 0.4371 - precision: 0.7267 - recall: 0.0847 - val_loss: 89.7060 - val_accuracy: 0.3115 - val_precision: 0.3418 - val_recall: 0.3084
-...
-Epoch 17/20
-179/179 [==============================] - 215s 1s/step - loss: 50.7498 - accuracy: 0.5352 - precision: 0.7136 - recall: 0.2731 - val_loss: 51.1083 - val_accuracy: 0.4092 - val_precision: 0.3968 - val_recall: 0.2641
-Epoch 18/20
-179/179 [==============================] - 215s 1s/step - loss: 49.5104 - accuracy: 0.5474 - precision: 0.7124 - recall: 0.2875 - val_loss: 50.5018 - val_accuracy: 0.3221 - val_precision: 0.3367 - val_recall: 0.3084
-Epoch 19/20
-179/179 [==============================] - 214s 1s/step - loss: 48.4313 - accuracy: 0.5361 - precision: 0.7217 - recall: 0.2883 - val_loss: 49.4428 - val_accuracy: 0.4718 - val_precision: 0.4872 - val_recall: 0.4351
-Epoch 20/20
-179/179 [==============================] - 212s 1s/step - loss: 47.4657 - accuracy: 0.5459 - precision: 0.7157 - recall: 0.2945 - val_loss: 48.2538 - val_accuracy: 0.4718 - val_precision: 0.7436 - val_recall: 0.2656
+Epoch 1/30
+179/179 [==============================] - 214s 1s/step - loss: 4.5912 - accuracy: 0.7854 - precision: 0.8087 - recall: 0.7579 - val_loss: 4.8194 - val_accuracy: 0.7237 - val_precision: 0.7753 - val_recall: 0.6901 - lr: 9.2384e-05
+Epoch 2/30
+179/179 [==============================] - 166s 930ms/step - loss: 4.2211 - accuracy: 0.8820 - precision: 0.8907 - recall: 0.8731 - val_loss: 5.5833 - val_accuracy: 0.5939 - val_precision: 0.6063 - val_recall: 0.5832 - lr: 7.1715e-05
+Epoch 3/30
+179/179 [==============================] - 167s 931ms/step - loss: 4.0204 - accuracy: 0.9221 - precision: 0.9272 - recall: 0.9158 - val_loss: 4.2865 - val_accuracy: 0.8076 - val_precision: 0.8246 - val_recall: 0.7969 - lr: 4.4358e-05
+Epoch 4/30
+179/179 [==============================] - 163s 913ms/step - loss: 3.8949 - accuracy: 0.9428 - precision: 0.9463 - recall: 0.9375 - val_loss: 3.8891 - val_accuracy: 0.9435 - val_precision: 0.9434 - val_recall: 0.9420 - lr: 1.8739e-05
+Epoch 5/30
+179/179 [==============================] - 164s 917ms/step - loss: 3.8250 - accuracy: 0.9529 - precision: 0.9568 - recall: 0.9503 - val_loss: 3.8717 - val_accuracy: 0.9389 - val_precision: 0.9458 - val_recall: 0.9328 - lr: 2.7478e-06
+Epoch 6/30
+179/179 [==============================] - 166s 929ms/step - loss: 3.8246 - accuracy: 0.9463 - precision: 0.9513 - recall: 0.9412 - val_loss: 6.6253 - val_accuracy: 0.4931 - val_precision: 0.4953 - val_recall: 0.4855 - lr: 8.9705e-05
+Epoch 7/30
+179/179 [==============================] - ETA: 0s - loss: 3.7028 - accuracy: 0.9322 - precision: 0.9378 - recall: 0.9268 
+Epoch 8/30
+179/179 [==============================] - 162s 907ms/step - loss: 3.4857 - accuracy: 0.9445 - precision: 0.9468 - recall: 0.9415 - val_loss: 3.8859 - val_accuracy: 0.8046 - val_precision: 0.8091 - val_recall: 0.7893 - lr: 8.0075e-05
 """
 
 hist.history.keys()
@@ -479,14 +502,14 @@ print(f"Test Accuracy: {test_score[1]*100:.2f}%")
 
 
 """
-Train Loss: 47.0314
-Train Accuracy: 51.84%
+Train Loss: 3.7816
+Train Accuracy: 96.73%
 --------------------
-Validation Loss: 48.2683
-Validation Accuracy: 45.95%
+Validation Loss: 3.8712
+Validation Accuracy: 94.05%
 --------------------
-Test Loss: 75.1175
-Test Accuracy: 22.87%
+Test Loss: 3.8846
+Test Accuracy: 94.05%
 """
 
 preds = model.predict(ts_gen)
@@ -506,14 +529,14 @@ print(clr)
 """
               precision    recall  f1-score   support
 
-           0       0.23      1.00      0.37       150
-           1       0.00      0.00      0.00       153
-           2       0.00      0.00      0.00       203
-           3       0.00      0.00      0.00       150
+           0       0.99      0.93      0.96       150
+           1       0.96      0.82      0.88       153
+           2       0.96      1.00      0.98       203
+           3       0.86      1.00      0.93       150
 
-    accuracy                           0.23       656
-   macro avg       0.06      0.25      0.09       656
-weighted avg       0.05      0.23      0.09       656
+    accuracy                           0.94       656
+   macro avg       0.94      0.94      0.94       656
+weighted avg       0.94      0.94      0.94       656
 """
 
 ## 5.2 Testing
@@ -541,32 +564,32 @@ def predict(img_path):
     plt.show()
 
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-meTr_0000.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "pituitary" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-me_0010.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-me_0030.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 
 
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-glTr_0007.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-gl_0017.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-gl_0037.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 
 
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-noTr_0001.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-no_0011.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-no_0031.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 
 
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-piTr_0001.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-pi_0011.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-pi_0031.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "glioma" with 1.00 probability
