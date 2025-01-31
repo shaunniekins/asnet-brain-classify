@@ -1,4 +1,4 @@
-# v3.2.4
+# v3.2.5
 
 """
 !apt-get update
@@ -432,26 +432,31 @@ hist = model.fit(
 )
 
 """
-Epoch 1/35
-179/179 [==============================] - 208s 1s/step - loss: 0.4366 - accuracy: 0.8419 - precision: 0.8933 - recall: 0.7794 - val_loss: 0.6087 - val_accuracy: 0.7679 - val_precision: 0.7920 - val_recall: 0.7557 - lr: 9.8913e-05
+179/179 [==============================] - 213s 1s/step - loss: 0.4333 - accuracy: 0.8438 - precision: 0.8943 - recall: 0.7808 - val_loss: 0.6450 - val_accuracy: 0.8244 - val_precision: 0.8252 - val_recall: 0.8214 - lr: 9.8913e-05
 Epoch 2/35
-179/179 [==============================] - 162s 904ms/step - loss: 0.2214 - accuracy: 0.9221 - precision: 0.9331 - recall: 0.9105 - val_loss: 0.6083 - val_accuracy: 0.8290 - val_precision: 0.8336 - val_recall: 0.8260 - lr: 9.5676e-05
+179/179 [==============================] - 165s 922ms/step - loss: 0.2180 - accuracy: 0.9242 - precision: 0.9334 - recall: 0.9154 - val_loss: 0.5833 - val_accuracy: 0.8076 - val_precision: 0.8219 - val_recall: 0.7893 - lr: 9.5676e-05
 Epoch 3/35
-179/179 [==============================] - 161s 900ms/step - loss: 0.1822 - accuracy: 0.9405 - precision: 0.9470 - recall: 0.9315 - val_loss: 0.6206 - val_accuracy: 0.7450 - val_precision: 0.7825 - val_recall: 0.7252 - lr: 9.0430e-05
+179/179 [==============================] - 165s 923ms/step - loss: 0.1518 - accuracy: 0.9482 - precision: 0.9541 - recall: 0.9424 - val_loss: 0.3449 - val_accuracy: 0.9084 - val_precision: 0.9126 - val_recall: 0.8931 - lr: 9.0430e-05
 Epoch 4/35
-179/179 [==============================] - 161s 897ms/step - loss: 0.1330 - accuracy: 0.9555 - precision: 0.9601 - recall: 0.9510 - val_loss: 0.8798 - val_accuracy: 0.7969 - val_precision: 0.8012 - val_recall: 0.7939 - lr: 8.3407e-05
+179/179 [==============================] - 164s 918ms/step - loss: 0.1328 - accuracy: 0.9541 - precision: 0.9577 - recall: 0.9506 - val_loss: 0.2696 - val_accuracy: 0.9221 - val_precision: 0.9298 - val_recall: 0.9099 - lr: 8.3407e-05
 Epoch 5/35
-179/179 [==============================] - 163s 908ms/step - loss: 0.0991 - accuracy: 0.9652 - precision: 0.9692 - recall: 0.9627 - val_loss: 0.3925 - val_accuracy: 0.8641 - val_precision: 0.8731 - val_recall: 0.8611 - lr: 7.4915e-05
+179/179 [==============================] - 166s 928ms/step - loss: 0.1011 - accuracy: 0.9657 - precision: 0.9700 - recall: 0.9622 - val_loss: 0.2610 - val_accuracy: 0.9344 - val_precision: 0.9358 - val_recall: 0.9344 - lr: 7.4915e-05
 Epoch 6/35
-179/179 [==============================] - 162s 905ms/step - loss: 0.0713 - accuracy: 0.9762 - precision: 0.9789 - recall: 0.9743 - val_loss: 0.4109 - val_accuracy: 0.8824 - val_precision: 0.8833 - val_recall: 0.8779 - lr: 6.5328e-05
+179/179 [==============================] - 165s 922ms/step - loss: 0.0871 - accuracy: 0.9711 - precision: 0.9740 - recall: 0.9688 - val_loss: 0.8324 - val_accuracy: 0.7450 - val_precision: 0.7650 - val_recall: 0.7405 - lr: 6.5328e-05
 Epoch 7/35
-179/179 [==============================] - 160s 895ms/step - loss: 0.0635 - accuracy: 0.9788 - precision: 0.9815 - recall: 0.9772 - val_loss: 0.0817 - val_accuracy: 0.9802 - val_precision: 0.9816 - val_recall: 0.9786 - lr: 5.5067e-05
+179/179 [==============================] - 168s 940ms/step - loss: 0.0571 - accuracy: 0.9820 - precision: 0.9832 - recall: 0.9813 - val_loss: 0.0812 - val_accuracy: 0.9725 - val_precision: 0.9785 - val_recall: 0.9710 - lr: 5.5067e-05
 Epoch 8/35
-179/179 [==============================] - 163s 911ms/step - loss: 0.0398 - accuracy: 0.9891 - precision: 0.9900 - recall: 0.9883 - val_loss: 0.3085 - val_accuracy: 0.9115 - val_precision: 0.9251 - val_recall: 0.9053 - lr: 4.4583e-05
+179/179 [==============================] - 165s 923ms/step - loss: 0.0357 - accuracy: 0.9877 - precision: 0.9882 - recall: 0.9863 - val_loss: 0.1526 - val_accuracy: 0.9756 - val_precision: 0.9755 - val_recall: 0.9725 - lr: 4.4583e-05
 Epoch 9/35
-179/179 [==============================] - 160s 892ms/step - loss: 0.0298 - accuracy: 0.9911 - precision: 0.9916 - recall: 0.9905 - val_loss: 0.0991 - val_accuracy: 0.9710 - val_precision: 0.9710 - val_recall: 0.9710 - lr: 3.4337e-05
+179/179 [==============================] - 166s 929ms/step - loss: 0.0292 - accuracy: 0.9911 - precision: 0.9914 - recall: 0.9898 - val_loss: 0.0619 - val_accuracy: 0.9786 - val_precision: 0.9801 - val_recall: 0.9786 - lr: 3.4337e-05
 Epoch 10/35
-179/179 [==============================] - 159s 887ms/step - loss: 0.0209 - accuracy: 0.9921 - precision: 0.9926 - recall: 0.9914 - val_loss: 0.0830 - val_accuracy: 0.9771 - val_precision: 0.9801 - val_recall: 0.9756 - lr: 2.4780e-05
+179/179 [==============================] - 166s 925ms/step - loss: 0.0221 - accuracy: 0.9926 - precision: 0.9928 - recall: 0.9926 - val_loss: 0.1144 - val_accuracy: 0.9618 - val_precision: 0.9633 - val_recall: 0.9618 - lr: 2.4780e-05
+Epoch 11/35
+179/179 [==============================] - ETA: 0s - loss: 0.0119 - accuracy: 0.9965 - precision: 0.9968 - recall: 0.9963 
+Epoch 11: ReduceLROnPlateau reducing learning rate to 1.1432314749981742e-05.
+179/179 [==============================] - 164s 918ms/step - loss: 0.0119 - accuracy: 0.9965 - precision: 0.9968 - recall: 0.9963 - val_loss: 0.1282 - val_accuracy: 0.9634 - val_precision: 0.9634 - val_recall: 0.9634 - lr: 1.6332e-05
+Epoch 12/35
+179/179 [==============================] - 164s 916ms/step - loss: 0.0101 - accuracy: 0.9975 - precision: 0.9975 - recall: 0.9972 - val_loss: 0.1051 - val_accuracy: 0.9817 - val_precision: 0.9817 - val_recall: 0.9817 - lr: 9.3638e-06
 """
 
 hist.history.keys()
@@ -547,14 +552,14 @@ print(f"Test Accuracy: {test_score[1]*100:.2f}%")
 
 
 """
-Train Loss: 0.0368
-Train Accuracy: 98.69%
+Train Loss: 0.0250
+Train Accuracy: 99.16%
 --------------------
-Validation Loss: 0.0459
-Validation Accuracy: 98.17%
+Validation Loss: 0.0837
+Validation Accuracy: 98.02%
 --------------------
-Test Loss: 0.0700
-Test Accuracy: 97.87%
+Test Loss: 0.0416
+Test Accuracy: 98.78%
 """
 
 preds = model.predict(ts_gen)
@@ -574,17 +579,39 @@ print(clr)
 """
               precision    recall  f1-score   support
 
-           0       0.97      0.99      0.98       150
-           1       0.99      0.92      0.96       153
-           2       0.99      1.00      0.99       203
-           3       0.96      1.00      0.98       150
+           0       0.99      0.97      0.98       150
+           1       0.96      0.99      0.98       153
+           2       1.00      1.00      1.00       203
+           3       1.00      0.99      0.99       150
 
-    accuracy                           0.98       656
-   macro avg       0.98      0.98      0.98       656
-weighted avg       0.98      0.98      0.98       656
+    accuracy                           0.99       656
+   macro avg       0.99      0.99      0.99       656
+weighted avg       0.99      0.99      0.99       656
 """
 
 ## 5.2 Testing
+def predict_with_tta(model, img_path, num_augmentations=5):
+    img = Image.open(img_path)
+    resized_img = img.resize((299, 299))
+    img_array = np.asarray(resized_img)
+    
+    # Create augmented versions
+    predictions = []
+    aug = get_augmentation()
+    
+    # Original prediction
+    base_pred = model.predict(np.expand_dims(img_array, 0)/255.0)
+    predictions.append(base_pred)
+    
+    # Augmented predictions
+    for _ in range(num_augmentations):
+        aug_img = aug.random_transform(img_array)
+        aug_pred = model.predict(np.expand_dims(aug_img, 0)/255.0)
+        predictions.append(aug_pred)
+    
+    # Average predictions
+    return np.mean(predictions, axis=0)
+
 def predict(img_path):
     import numpy as np
     import matplotlib.pyplot as plt
@@ -593,12 +620,12 @@ def predict(img_path):
     plt.figure(figsize=(12, 12))
     img = Image.open(img_path)
     resized_img = img.resize((299, 299))
-    img = np.asarray(resized_img)
-    img = np.expand_dims(img, axis=0)
-    img = img / 255
-    predictions = model.predict(img)
+    
+    # Use TTA for prediction
+    predictions = predict_with_tta(model, img_path)
     probs = list(predictions[0])
     labels = label
+    
     plt.subplot(2, 1, 1)
     plt.imshow(resized_img)
     plt.subplot(2, 1, 2)
@@ -609,17 +636,17 @@ def predict(img_path):
     plt.show()
 
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-meTr_0000.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "pituitary" with 0.67 probability and "meningioma" with 0.33 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-me_0010.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "pituitary" with 0.33 probability and "meningioma" with 0.67 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/meningioma/Te-me_0030.jpg')
 # it predicted "meningioma" with 1.00 probability
 
 
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-glTr_0007.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "pituitary" with 0.5 probability and "meningioma" with 0.5 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-gl_0017.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "pituitary" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-gl_0037.jpg')
 # it predicted "meningioma" with 1.00 probability
 
@@ -627,7 +654,7 @@ predict('/kaggle/input/brain-tumor-mri-dataset/Testing/glioma/Te-gl_0037.jpg')
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-noTr_0001.jpg')
 # it predicted "meningioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-no_0011.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "pituitary" with 0.67 probability and "meningioma" with 0.33 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-no_0031.jpg')
 # it predicted "meningioma" with 1.00 probability
 
@@ -635,6 +662,8 @@ predict('/kaggle/input/brain-tumor-mri-dataset/Testing/notumor/Te-no_0031.jpg')
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-piTr_0001.jpg')
 # it predicted "meningioma" with 1.00 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-pi_0011.jpg')
-# it predicted "meningioma" with 1.00 probability
+# it predicted "pituitary" with 0.67 probability and "meningioma" with 0.33 probability
 predict('/kaggle/input/brain-tumor-mri-dataset/Testing/pituitary/Te-pi_0031.jpg')
 # it predicted "meningioma" with 1.00 probability
+
+fdf
