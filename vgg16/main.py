@@ -1,86 +1,107 @@
 # vgg16/main.py
-# v5
+# v6
 
-
-"""
-!apt-get update
-!apt-get install graphviz -y
-
-!pip install --upgrade pip
-!pip install graphviz
-!pip install seaborn
-!pip install pydot
-"""
-
-
-
+# ------------------------------
 # 1. Import needed libraries
+# ------------------------------
+
+# ---------- Basic Python imports ----------
 import os
+import time
+import warnings
+# ---------- Image Processing ----------
 from PIL import Image
+# ---------- Data Analysis & Visualization ----------
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-# ---------------------------------------
+# ---------- Machine Learning ----------
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
-# ---------------------------------------
+# ---------- Deep Learning & TensorFlow ----------
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import BatchNormalization, Dense, Dropout, Conv2D, concatenate, Multiply, GlobalMaxPooling2D, GlobalAveragePooling2D, Reshape, Layer
+from tensorflow.keras.layers import (
+    BatchNormalization,
+    Dense,
+    Dropout,
+    Conv2D,
+    Multiply,
+    GlobalAveragePooling2D,
+    Reshape,
+    Layer
+)
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.applications import VGG16
 from tensorflow.keras import Input
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
-# ---------------------------------------
-import warnings
+# ---------- Settings ----------
 warnings.filterwarnings("ignore")
 
-# Detect and initialize the TPU
-try:
-    tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
-    print("Running on TPU ", tpu.master())
-except ValueError:
-    tpu = None
-    print("No TPU detected. Running on CPU/GPU")
-    
-if tpu:
-    tf.config.experimental_connect_to_cluster(tpu)
-    tf.tpu.experimental.initialize_tpu_system(tpu)
-    tpu_strategy = tf.distribute.experimental.TPUStrategy(tpu)
+
+# GPU/CPU detection
+print("Checking available devices...")
+gpus = tf.config.list_physical_devices('GPU')
+if gpus:
+    try:
+        # Currently, memory growth needs to be the same across GPUs
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        logical_gpus = tf.config.list_logical_devices('GPU')
+        print(f"Physical GPUs: {len(gpus)}, Logical GPUs: {len(logical_gpus)}")
+        strategy = tf.distribute.MirroredStrategy()
+        print(f"Running on {len(strategy.extended.worker_devices)} GPU(s)")
+    except RuntimeError as e:
+        # Memory growth must be set before GPUs have been initialized
+        print(e)
+        strategy = tf.distribute.get_strategy()
+        print("Running on CPU")
 else:
-    tpu_strategy = tf.distribute.get_strategy()
-    
-print("REPLICAS: ", tpu_strategy.num_replicas_in_sync)
+    strategy = tf.distribute.get_strategy()
+    print("No GPU detected. Running on CPU")
+
+print("REPLICAS: ", strategy.num_replicas_in_sync)
 
 
-# Preprocessing
+# ------------------------------
+# 2. Preprocessing
+# ------------------------------
 
-## 2.1 Load Data
-def test_df(ts_path):
-    classes, class_paths = zip(*[(label, os.path.join(ts_path, label, image))
-                                 for label in os.listdir(ts_path) if os.path.isdir(os.path.join(ts_path, label))
-                                 for image in os.listdir(os.path.join(ts_path, label))])
+# 2.1 Load Data
+# ------------------------------
 
-    ts_df = pd.DataFrame({'Class Path': class_paths, 'Class': classes})
-    return ts_df
+def create_dataset_df(path):
+    """
+    Create a DataFrame containing image paths and their corresponding classes.
 
-def train_df(tr_path):
-    classes, class_paths = zip(*[(label, os.path.join(tr_path, label, image))
-                                 for label in os.listdir(tr_path) if os.path.isdir(os.path.join(tr_path, label))
-                                 for image in os.listdir(os.path.join(tr_path, label))])
+    Args:
+        path (str): Path to the dataset directory
 
-    tr_df = pd.DataFrame({'Class Path': class_paths, 'Class': classes})
-    return tr_df
+    Returns:
+        pd.DataFrame: DataFrame with columns 'Class Path' and 'Class'
+    """
+    classes, class_paths = zip(*[(label, os.path.join(path, label, image))
+                                 for label in os.listdir(path) if os.path.isdir(os.path.join(path, label))
+                                 for image in os.listdir(os.path.join(path, label))])
 
-tr_df = train_df('/kaggle/input/Training')
-ts_df = test_df('/kaggle/input/Testing')
+    return pd.DataFrame({'Class Path': class_paths, 'Class': classes})
+
+# /kaggle/input/
+
+
+tr_df = create_dataset_df('/brain-tumor-mri-dataset/Training')
+tr_df
+
+ts_df = create_dataset_df('/brain-tumor-mri-dataset/Testing')
+ts_df
+
 
 # Count of images in each class in train data
-plt.figure(figsize=(15,7))
-ax = sns.countplot(data=tr_df , y=tr_df['Class'])
+plt.figure(figsize=(15, 7))
+ax = sns.countplot(data=tr_df, y=tr_df['Class'])
 
 plt.xlabel('')
 plt.ylabel('')
@@ -88,6 +109,7 @@ plt.title('Count of images in each class', fontsize=20)
 ax.bar_label(ax.containers[0])
 
 plt.show()
+
 
 # Count each class in test data
 plt.figure(figsize=(15, 7))
@@ -99,12 +121,21 @@ ax.bar_label(ax.containers[0])
 plt.show()
 
 
-## 2.2 Split data into train, test, valid
-valid_df, ts_df = train_test_split(ts_df, train_size=0.5, random_state=20, stratify=ts_df['Class'])
+# 2.2 Split data into train, test, valid
+# ------------------------------
 
-## 2.3 Data preprocessing
-BATCH_SIZE = 32 * tpu_strategy.num_replicas_in_sync  # Scales with TPU cores
-IMAGE_SIZE = (299, 299)
+valid_df, ts_df = train_test_split(
+    ts_df, train_size=0.5, random_state=20, stratify=ts_df['Class'])
+
+valid_df
+
+
+# 2.3 Data preprocessing
+# ------------------------------
+
+BATCH_SIZE = 32 * strategy.num_replicas_in_sync
+IMAGE_SIZE = (224, 224)
+
 
 def prepare_data(tr_df, ts_df):
     def process_image(file_path):
@@ -116,12 +147,14 @@ def prepare_data(tr_df, ts_df):
         return np.array(img)
 
     # Convert DataFrame to numpy arrays
-    X = np.array([process_image(f) for f in tr_df['Class Path']], dtype=np.float32) / 255.0
+    X = np.array([process_image(f)
+                 for f in tr_df['Class Path']], dtype=np.float32) / 255.0
     y = pd.get_dummies(tr_df['Class']).values
-    
-    X_test = np.array([process_image(f) for f in ts_df['Class Path']], dtype=np.float32) / 255.0
+
+    X_test = np.array([process_image(f)
+                      for f in ts_df['Class Path']], dtype=np.float32) / 255.0
     y_test = pd.get_dummies(ts_df['Class']).values
-    
+
     return X, y, X_test, y_test
 
 
@@ -138,24 +171,28 @@ def get_augmentation():
         fill_mode='reflect'
     )
 
+
 _gen = get_augmentation()
 
 ts_gen = ImageDataGenerator(rescale=1/255)
 
 
 tr_gen = _gen.flow_from_dataframe(tr_df, x_col='Class Path',
-                                 y_col='Class', batch_size=BATCH_SIZE,
-                                 target_size=IMAGE_SIZE)
+                                  y_col='Class', batch_size=BATCH_SIZE,
+                                  target_size=IMAGE_SIZE)
 
 valid_gen = _gen.flow_from_dataframe(valid_df, x_col='Class Path',
-                                    y_col='Class', batch_size=BATCH_SIZE,
-                                    target_size=IMAGE_SIZE)
+                                     y_col='Class', batch_size=BATCH_SIZE,
+                                     target_size=IMAGE_SIZE)
 
 ts_gen = ts_gen.flow_from_dataframe(ts_df, x_col='Class Path',
-                                   y_col='Class', batch_size=BATCH_SIZE,
-                                   target_size=IMAGE_SIZE, shuffle=False)
+                                    y_col='Class', batch_size=BATCH_SIZE,
+                                    target_size=IMAGE_SIZE, shuffle=False)
 
-## 2.4 Getting samples from data
+
+# 2.4 Getting samples from data
+# ------------------------------
+
 # Get the class dictionary and classes list
 class_dict = tr_gen.class_indices
 classes = list(class_dict.keys())
@@ -182,38 +219,60 @@ plt.tight_layout()
 plt.show()
 
 
+# ------------------------------
 # 3. Building Deep Learning Model
+# ------------------------------
+
 class SAM(Model):
     def __init__(self, filters):
         super(SAM, self).__init__()
         self.filters = filters
+        # Three sequential 3x3 convs as specified
         self.conv1 = Conv2D(self.filters // 4, 3, activation='relu',
                             padding='same', kernel_initializer='he_normal')
         self.conv2 = Conv2D(self.filters // 4, 3, activation='relu',
                             padding='same', kernel_initializer='he_normal')
         self.conv3 = Conv2D(self.filters // 4, 3, activation='relu',
                             padding='same', kernel_initializer='he_normal')
+        # Dimension reduction conv
         self.conv4 = Conv2D(self.filters // 4, 1,
                             activation='relu', kernel_initializer='he_normal')
-        self.W1 = Conv2D(self.filters // 4, 1,
-                         activation='sigmoid', kernel_initializer='he_normal')
-        self.W2 = Conv2D(self.filters // 4, 1,
-                         activation='sigmoid', kernel_initializer='he_normal')
+        # Attention branch convs
+        self.W1 = Conv2D(1, 1, activation='sigmoid',
+                         kernel_initializer='he_normal')
+        self.W2 = Conv2D(1, 1, activation='sigmoid',
+                         kernel_initializer='he_normal')
 
     def call(self, inputs):
+        # Sequential convolutions
         out1 = self.conv3(self.conv2(self.conv1(inputs)))
+        # Dimension reduction
         out2 = self.conv4(inputs)
 
-        pool1 = GlobalAveragePooling2D()(out2)
-        pool1 = Reshape((1, 1, self.filters // 4))(pool1)
-        merge1 = self.W1(pool1)
+        # 2x2 max pooling branch
+        pool1 = tf.keras.layers.MaxPool2D(pool_size=(2, 2))(out2)
+        # Bilinear upsampling to original size
+        upsample1 = tf.image.resize(pool1, size=tf.shape(out2)[
+                                    1:3], method='bilinear')
+        # Apply 1x1 conv with sigmoid
+        attention1 = self.W1(upsample1)
 
-        pool2 = GlobalMaxPooling2D()(out2)
-        pool2 = Reshape((1, 1, self.filters // 4))(pool2)
-        merge2 = self.W2(pool2)
+        # 4x4 max pooling branch
+        pool2 = tf.keras.layers.MaxPool2D(pool_size=(4, 4))(out2)
+        # Bilinear upsampling to original size
+        upsample2 = tf.image.resize(pool2, size=tf.shape(out2)[
+                                    1:3], method='bilinear')
+        # Apply 1x1 conv with sigmoid
+        attention2 = self.W2(upsample2)
 
-        out3 = merge1 + merge2
-        y = Multiply()([out1, out3]) + out2
+        # Sum the two attention maps
+        attention_sum = attention1 + attention2
+
+        # Apply attention to features via element-wise multiplication
+        attended_features = Multiply()([out1, attention_sum])
+
+        # Add to dimension-reduced input (residual connection)
+        y = attended_features + out2
         return y
 
 
@@ -221,14 +280,17 @@ class CAM(Model):
     def __init__(self, filters, reduction_ratio=16):
         super(CAM, self).__init__()
         self.filters = filters
+        # Conv block to process input features
         self.conv1 = Conv2D(self.filters // 4, 3, activation='relu',
                             padding='same', kernel_initializer='he_normal')
         self.conv2 = Conv2D(self.filters // 4, 3, activation='relu',
                             padding='same', kernel_initializer='he_normal')
         self.conv3 = Conv2D(self.filters // 4, 3, activation='relu',
                             padding='same', kernel_initializer='he_normal')
+        # Dimension reduction conv
         self.conv4 = Conv2D(self.filters // 4, 1,
                             activation='relu', kernel_initializer='he_normal')
+        # Squeeze-and-Excitation components
         self.gpool = GlobalAveragePooling2D()
         self.fc1 = Dense(self.filters // (4 * reduction_ratio),
                          activation='relu', use_bias=False)
@@ -236,12 +298,59 @@ class CAM(Model):
                          activation='sigmoid', use_bias=False)
 
     def call(self, inputs):
+        # Process input through conv block
         out1 = self.conv3(self.conv2(self.conv1(inputs)))
+        # Dimension reduction
         out2 = self.conv4(inputs)
-        out3 = self.fc2(self.fc1(self.gpool(out2)))
-        out3 = Reshape((1, 1, self.filters // 4))(out3)
-        y = Multiply()([out1, out3]) + out2
+
+        # Squeeze-and-Excitation: squeeze spatial dimensions
+        channel_attention = self.gpool(out2)
+        # Dimension reduction in channel-wise fully connected layer
+        channel_attention = self.fc1(channel_attention)
+        # Dimension increase with sigmoid activation
+        channel_attention = self.fc2(channel_attention)
+        # Reshape to proper dimensions for broadcasting
+        channel_attention = Reshape(
+            (1, 1, self.filters // 4))(channel_attention)
+
+        # Apply channel attention via element-wise multiplication
+        recalibrated = Multiply()([out1, channel_attention])
+
+        # Add residual connection with dimension-reduced input
+        y = recalibrated + out2
         return y
+
+
+class SynergyModule(Model):
+    def __init__(self, filters):
+        super(SynergyModule, self).__init__()
+        self.filters = filters
+        # Trainable scaling parameters
+        self.alpha = tf.Variable(
+            0.5, trainable=True, dtype=tf.float32, name="alpha")
+        self.beta = tf.Variable(0.5, trainable=True,
+                                dtype=tf.float32, name="beta")
+        # Integration components
+        self.conv = Conv2D(filters, 3, padding='same',
+                           kernel_initializer='he_normal')
+        self.bn = BatchNormalization()
+
+    def call(self, inputs):
+        # Unpack inputs (spatial and channel attention outputs)
+        spatial_features, channel_features = inputs
+
+        # Scale each pathway with trainable parameters
+        scaled_spatial = tf.multiply(spatial_features, self.alpha)
+        scaled_channel = tf.multiply(channel_features, self.beta)
+
+        # Sum the scaled features
+        combined = scaled_spatial + scaled_channel
+
+        # Apply convolution and batch normalization
+        output = self.conv(combined)
+        output = self.bn(output)
+
+        return output
 
 
 class ResizeLayer(Layer):
@@ -264,13 +373,14 @@ def adjust_feature_map(x, target_shape):
 
 
 # AS_Net with VGG16 encoder
-def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None, reg_factor=0.0005):  # Reduced reg_factor
+def AS_Net(encoder='vgg16', input_size=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3), fine_tune_at=None):
     inputs = Input(input_size)
     print(f'CURRENT ENCODER: {encoder}')
 
     if encoder == 'vgg16':
         # Load VGG16 with ImageNet weights
-        ENCODER = VGG16(weights='imagenet', include_top=False, input_shape=input_size)
+        ENCODER = VGG16(weights='imagenet', include_top=False,
+                        input_shape=input_size)
 
         # Freeze all layers initially
         ENCODER.trainable = False
@@ -285,26 +395,27 @@ def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None, reg_fac
         # Selected output layers (you can experiment with different indices)
         layer_indices = [2, 5, 9, 13, 17]
     else:
-        raise ValueError("Unsupported encoder type. Only 'vgg16' is supported in this case.")
+        raise ValueError(
+            "Unsupported encoder type. Only 'vgg16' is supported in this case.")
 
     # Get the output layers dynamically
     output_layers = [ENCODER.get_layer(index=i).output for i in layer_indices]
-    outputs = [Model(inputs=ENCODER.inputs, outputs=layer)(inputs)
-               for layer in output_layers]
+    encoder_outputs = [Model(inputs=ENCODER.inputs, outputs=layer)(inputs)
+                       for layer in output_layers]
 
-    # Adjust and merge feature maps
-    merged = outputs[-1]
-    for i in range(len(outputs) - 2, -1, -1):
-        adjusted = adjust_feature_map(outputs[i], merged.shape)
-        merged = concatenate([merged, adjusted], axis=-1)
+    # Get the final encoder output that will be processed by the attention paths
+    final_encoder_output = encoder_outputs[-1]
+    filters = final_encoder_output.shape[-1]
 
-    # Apply SAM and CAM, scale filters dynamically based on merged feature size
-    filters = merged.shape[-1]
-    SAM1 = SAM(filters=filters)(merged)
-    CAM1 = CAM(filters=filters)(merged)
+    # Create two parallel attention paths
+    # Spatial Attention Path
+    SAM_output = SAM(filters=filters)(final_encoder_output)
 
-    # Combine SAM and CAM outputs
-    combined = concatenate([SAM1, CAM1], axis=-1)
+    # Channel Attention Path
+    CAM_output = CAM(filters=filters)(final_encoder_output)
+
+    # Apply Synergy Module to combine attention outputs
+    synergy_output = SynergyModule(filters=filters)([SAM_output, CAM_output])
 
     # Simplify the final layers
     final_layers = Sequential([
@@ -316,20 +427,21 @@ def AS_Net(encoder='vgg16', input_size=(299, 299, 3), fine_tune_at=None, reg_fac
         Dense(4, activation='softmax')
     ])
 
-    output = final_layers(combined)
+    output = final_layers(synergy_output)
 
     model = Model(inputs=inputs, outputs=output)
     return model
 
+
 # Create and compile the model
-with tpu_strategy.scope():
+with strategy.scope():
     model = AS_Net(encoder='vgg16', fine_tune_at=12)
-    
+
     # Simplified learning rate setup
     initial_learning_rate = 1e-4
-    
+
     optimizer = Adam(learning_rate=initial_learning_rate)
-    
+
     model.compile(
         optimizer=optimizer,
         loss='categorical_crossentropy',
@@ -343,17 +455,23 @@ with tpu_strategy.scope():
 
 model.summary()
 
+
 tf.keras.utils.plot_model(model, show_shapes=True)
 
 
+# ------------------------------
 # 4. Training
+# ------------------------------
+
+
+start_time = time.time()
 num_epochs = 35
 
 # Callbacks
 tensorboard_callback = tf.keras.callbacks.TensorBoard(
-    log_dir='logs', 
-    histogram_freq=1, 
-    write_graph=True, 
+    log_dir='logs',
+    histogram_freq=1,
+    write_graph=True,
     profile_batch=0
 )
 
@@ -378,6 +496,7 @@ checkpoint = ModelCheckpoint(
     mode='min'
 )
 
+
 # Compute class weights
 def get_class_weights(y):
     class_weights = compute_class_weight(
@@ -387,12 +506,14 @@ def get_class_weights(y):
     )
     return dict(enumerate(class_weights))
 
+
 # Calculate balanced class weights
 class_weights = compute_class_weight(
     'balanced',
     classes=np.unique(tr_gen.classes),
     y=tr_gen.classes
 )
+
 class_weight_dict = dict(enumerate(class_weights))
 
 # Use in training
@@ -413,56 +534,59 @@ hist = model.fit(
 
 """
 Epoch 1/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 255s 1s/step - accuracy: 0.7615 - auc: 0.9279 - loss: 0.6486 - precision: 0.8527 - recall: 0.6257 - val_accuracy: 0.6504 - val_auc: 0.8446 - val_loss: 1.5510 - val_precision: 0.6558 - val_recall: 0.6427 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 134s 658ms/step - accuracy: 0.7955 - auc: 0.9416 - loss: 0.5785 - precision: 0.8809 - recall: 0.6757 - val_accuracy: 0.8931 - val_auc: 0.9791 - val_loss: 0.3290 - val_precision: 0.9057 - val_recall: 0.8794 - learning_rate: 1.0000e-04
 Epoch 2/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 161s 869ms/step - accuracy: 0.9049 - auc: 0.9859 - loss: 0.2814 - precision: 0.9184 - recall: 0.8950 - val_accuracy: 0.8519 - val_auc: 0.9678 - val_loss: 0.4729 - val_precision: 0.8571 - val_recall: 0.8427 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 91s 492ms/step - accuracy: 0.9191 - auc: 0.9889 - loss: 0.2501 - precision: 0.9299 - recall: 0.9025 - val_accuracy: 0.6748 - val_auc: 0.8964 - val_loss: 1.0807 - val_precision: 0.6822 - val_recall: 0.6718 - learning_rate: 1.0000e-04
 Epoch 3/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 160s 863ms/step - accuracy: 0.9244 - auc: 0.9909 - loss: 0.2202 - precision: 0.9345 - recall: 0.9147 - val_accuracy: 0.8885 - val_auc: 0.9881 - val_loss: 0.2606 - val_precision: 0.8937 - val_recall: 0.8855 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 92s 498ms/step - accuracy: 0.9433 - auc: 0.9930 - loss: 0.1862 - precision: 0.9515 - recall: 0.9310 - val_accuracy: 0.8168 - val_auc: 0.9605 - val_loss: 0.4962 - val_precision: 0.8299 - val_recall: 0.7969 - learning_rate: 1.0000e-04
 Epoch 4/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 158s 852ms/step - accuracy: 0.9521 - auc: 0.9947 - loss: 0.1525 - precision: 0.9572 - recall: 0.9475 - val_accuracy: 0.7359 - val_auc: 0.9079 - val_loss: 0.9863 - val_precision: 0.7358 - val_recall: 0.7313 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 92s 499ms/step - accuracy: 0.9506 - auc: 0.9955 - loss: 0.1499 - precision: 0.9581 - recall: 0.9460 - val_accuracy: 0.9206 - val_auc: 0.9920 - val_loss: 0.2127 - val_precision: 0.9314 - val_recall: 0.9115 - learning_rate: 1.0000e-04
 Epoch 5/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 163s 879ms/step - accuracy: 0.9560 - auc: 0.9957 - loss: 0.1355 - precision: 0.9616 - recall: 0.9506 - val_accuracy: 0.9267 - val_auc: 0.9927 - val_loss: 0.2075 - val_precision: 0.9361 - val_recall: 0.9176 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 93s 499ms/step - accuracy: 0.9551 - auc: 0.9977 - loss: 0.1154 - precision: 0.9593 - recall: 0.9498 - val_accuracy: 0.9313 - val_auc: 0.9954 - val_loss: 0.1712 - val_precision: 0.9368 - val_recall: 0.9282 - learning_rate: 1.0000e-04
 Epoch 6/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 161s 869ms/step - accuracy: 0.9705 - auc: 0.9976 - loss: 0.0943 - precision: 0.9726 - recall: 0.9677 - val_accuracy: 0.9084 - val_auc: 0.9881 - val_loss: 0.2509 - val_precision: 0.9185 - val_recall: 0.8947 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 91s 493ms/step - accuracy: 0.9691 - auc: 0.9975 - loss: 0.0959 - precision: 0.9728 - recall: 0.9645 - val_accuracy: 0.9160 - val_auc: 0.9881 - val_loss: 0.2433 - val_precision: 0.9297 - val_recall: 0.9084 - learning_rate: 1.0000e-04
 Epoch 7/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 159s 860ms/step - accuracy: 0.9730 - auc: 0.9985 - loss: 0.0825 - precision: 0.9762 - recall: 0.9700 - val_accuracy: 0.7389 - val_auc: 0.9128 - val_loss: 1.0063 - val_precision: 0.7450 - val_recall: 0.7359 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 91s 492ms/step - accuracy: 0.9691 - auc: 0.9975 - loss: 0.0966 - precision: 0.9719 - recall: 0.9655 - val_accuracy: 0.6397 - val_auc: 0.8406 - val_loss: 1.7129 - val_precision: 0.6400 - val_recall: 0.6351 - learning_rate: 1.0000e-04
 Epoch 8/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 0s 743ms/step - accuracy: 0.9702 - auc: 0.9984 - loss: 0.0866 - precision: 0.9726 - recall: 0.9681
+179/179 ━━━━━━━━━━━━━━━━━━━━ 0s 421ms/step - accuracy: 0.9780 - auc: 0.9985 - loss: 0.0747 - precision: 0.9807 - recall: 0.9754
 Epoch 8: ReduceLROnPlateau reducing learning rate to 4.999999873689376e-05.
-179/179 ━━━━━━━━━━━━━━━━━━━━ 160s 865ms/step - accuracy: 0.9702 - auc: 0.9984 - loss: 0.0866 - precision: 0.9726 - recall: 0.9681 - val_accuracy: 0.6550 - val_auc: 0.8603 - val_loss: 1.5468 - val_precision: 0.6630 - val_recall: 0.6458 - learning_rate: 1.0000e-04
+179/179 ━━━━━━━━━━━━━━━━━━━━ 91s 492ms/step - accuracy: 0.9780 - auc: 0.9985 - loss: 0.0747 - precision: 0.9807 - recall: 0.9754 - val_accuracy: 0.8718 - val_auc: 0.9712 - val_loss: 0.4050 - val_precision: 0.8834 - val_recall: 0.8672 - learning_rate: 1.0000e-04
 Epoch 9/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 160s 863ms/step - accuracy: 0.9847 - auc: 0.9985 - loss: 0.0590 - precision: 0.9857 - recall: 0.9840 - val_accuracy: 0.9664 - val_auc: 0.9981 - val_loss: 0.1003 - val_precision: 0.9694 - val_recall: 0.9664 - learning_rate: 5.0000e-05
+179/179 ━━━━━━━━━━━━━━━━━━━━ 92s 500ms/step - accuracy: 0.9841 - auc: 0.9991 - loss: 0.0527 - precision: 0.9848 - recall: 0.9811 - val_accuracy: 0.9756 - val_auc: 0.9981 - val_loss: 0.0722 - val_precision: 0.9785 - val_recall: 0.9710 - learning_rate: 5.0000e-05
 Epoch 10/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 159s 861ms/step - accuracy: 0.9880 - auc: 0.9996 - loss: 0.0355 - precision: 0.9892 - recall: 0.9873 - val_accuracy: 0.9802 - val_auc: 0.9991 - val_loss: 0.0632 - val_precision: 0.9802 - val_recall: 0.9802 - learning_rate: 5.0000e-05
+179/179 ━━━━━━━━━━━━━━━━━━━━ 94s 507ms/step - accuracy: 0.9884 - auc: 0.9985 - loss: 0.0466 - precision: 0.9894 - recall: 0.9867 - val_accuracy: 0.9847 - val_auc: 0.9997 - val_loss: 0.0438 - val_precision: 0.9877 - val_recall: 0.9847 - learning_rate: 5.0000e-05
 Epoch 11/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 156s 841ms/step - accuracy: 0.9888 - auc: 0.9998 - loss: 0.0326 - precision: 0.9900 - recall: 0.9888 - val_accuracy: 0.9634 - val_auc: 0.9985 - val_loss: 0.1026 - val_precision: 0.9663 - val_recall: 0.9618 - learning_rate: 5.0000e-05
+179/179 ━━━━━━━━━━━━━━━━━━━━ 93s 500ms/step - accuracy: 0.9938 - auc: 0.9998 - loss: 0.0238 - precision: 0.9945 - recall: 0.9929 - val_accuracy: 0.9817 - val_auc: 0.9997 - val_loss: 0.0404 - val_precision: 0.9832 - val_recall: 0.9817 - learning_rate: 5.0000e-05
 Epoch 12/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 157s 846ms/step - accuracy: 0.9902 - auc: 0.9995 - loss: 0.0341 - precision: 0.9905 - recall: 0.9901 - val_accuracy: 0.9053 - val_auc: 0.9815 - val_loss: 0.3584 - val_precision: 0.9133 - val_recall: 0.9008 - learning_rate: 5.0000e-05
-Epoch 13/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 0s 729ms/step - accuracy: 0.9903 - auc: 0.9998 - loss: 0.0283 - precision: 0.9915 - recall: 0.9897
-Epoch 13: ReduceLROnPlateau reducing learning rate to 2.499999936844688e-05.
-179/179 ━━━━━━━━━━━━━━━━━━━━ 157s 849ms/step - accuracy: 0.9903 - auc: 0.9998 - loss: 0.0283 - precision: 0.9915 - recall: 0.9897 - val_accuracy: 0.8076 - val_auc: 0.9682 - val_loss: 0.5081 - val_precision: 0.8262 - val_recall: 0.7985 - learning_rate: 5.0000e-05
-Epoch 14/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 159s 859ms/step - accuracy: 0.9944 - auc: 0.9998 - loss: 0.0217 - precision: 0.9945 - recall: 0.9938 - val_accuracy: 0.9710 - val_auc: 0.9991 - val_loss: 0.0725 - val_precision: 0.9725 - val_recall: 0.9710 - learning_rate: 2.5000e-05
-Epoch 15/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 159s 860ms/step - accuracy: 0.9973 - auc: 1.0000 - loss: 0.0118 - precision: 0.9973 - recall: 0.9973 - val_accuracy: 0.9954 - val_auc: 1.0000 - val_loss: 0.0143 - val_precision: 0.9954 - val_recall: 0.9954 - learning_rate: 2.5000e-05
-Epoch 16/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 157s 848ms/step - accuracy: 0.9963 - auc: 1.0000 - loss: 0.0092 - precision: 0.9965 - recall: 0.9963 - val_accuracy: 0.9786 - val_auc: 0.9995 - val_loss: 0.0536 - val_precision: 0.9786 - val_recall: 0.9786 - learning_rate: 2.5000e-05
-Epoch 17/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 156s 840ms/step - accuracy: 0.9966 - auc: 0.9998 - loss: 0.0094 - precision: 0.9966 - recall: 0.9961 - val_accuracy: 0.9328 - val_auc: 0.9874 - val_loss: 0.2342 - val_precision: 0.9328 - val_recall: 0.9328 - learning_rate: 2.5000e-05
-Epoch 18/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 0s 727ms/step - accuracy: 0.9965 - auc: 1.0000 - loss: 0.0107 - precision: 0.9965 - recall: 0.9965
-Epoch 18: ReduceLROnPlateau reducing learning rate to 1.249999968422344e-05.
-179/179 ━━━━━━━━━━━━━━━━━━━━ 157s 848ms/step - accuracy: 0.9965 - auc: 1.0000 - loss: 0.0107 - precision: 0.9965 - recall: 0.9965 - val_accuracy: 0.9542 - val_auc: 0.9943 - val_loss: 0.1583 - val_precision: 0.9541 - val_recall: 0.9527 - learning_rate: 2.5000e-05
-Epoch 19/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 158s 852ms/step - accuracy: 0.9980 - auc: 0.9999 - loss: 0.0109 - precision: 0.9980 - recall: 0.9980 - val_accuracy: 0.9939 - val_auc: 0.9999 - val_loss: 0.0215 - val_precision: 0.9939 - val_recall: 0.9939 - learning_rate: 1.2500e-05
+...
 Epoch 20/35
-179/179 ━━━━━━━━━━━━━━━━━━━━ 158s 855ms/step - accuracy: 0.9983 - auc: 0.9999 - loss: 0.0077 - precision: 0.9983 - recall: 0.9983 - val_accuracy: 0.9908 - val_auc: 0.9999 - val_loss: 0.0209 - val_precision: 0.9908 - val_recall: 0.9908 - learning_rate: 1.2500e-05
+179/179 ━━━━━━━━━━━━━━━━━━━━ 96s 517ms/step - accuracy: 0.9987 - auc: 1.0000 - loss: 0.0072 - precision: 0.9988 - recall: 0.9987 - val_accuracy: 0.9939 - val_auc: 1.0000 - val_loss: 0.0116 - val_precision: 0.9939 - val_recall: 0.9939 - learning_rate: 1.2500e-05
+Epoch 21/35
+179/179 ━━━━━━━━━━━━━━━━━━━━ 96s 517ms/step - accuracy: 0.9983 - auc: 0.9998 - loss: 0.0069 - precision: 0.9983 - recall: 0.9981 - val_accuracy: 0.9954 - val_auc: 1.0000 - val_loss: 0.0156 - val_precision: 0.9954 - val_recall: 0.9954 - learning_rate: 1.2500e-05
 """
+
+
+end_time = time.time()
+training_duration = end_time - start_time
+
+# Print duration in hours, minutes, and seconds
+hours = int(training_duration // 3600)
+minutes = int((training_duration % 3600) // 60)
+seconds = int(training_duration % 60)
+print(f"\nTotal training time: {hours:02d}:{minutes:02d}:{seconds:02d}")
+
+
+"""
+Total training time: 00:35:41
+"""
+
 
 hist.history.keys()
 
-## 4.1 Visualize model performance
+
+# 4.1 Visualize model performance
+# ------------------------------
+
 tr_acc = hist.history['accuracy']
 tr_loss = hist.history['loss']
 tr_per = hist.history['precision']
@@ -525,7 +649,8 @@ plt.grid(True)
 plt.subplot(2, 2, 4)
 plt.plot(Epochs, tr_recall, 'r', label='Recall')
 plt.plot(Epochs, val_recall, 'g', label='Validation Recall')
-plt.scatter(index_recall + 1, recall_highest, s=150, c='blue', label=recall_label)
+plt.scatter(index_recall + 1, recall_highest,
+            s=150, c='blue', label=recall_label)
 plt.title('Recall and Validation Recall')
 plt.xlabel('Epochs')
 plt.ylabel('Recall')
@@ -535,8 +660,13 @@ plt.grid(True)
 plt.suptitle('Model Training Metrics Over Epochs', fontsize=16)
 plt.show()
 
+
+# ------------------------------
 # 5. Testing and Evaluation
-## 5.1 Evaluate
+# ------------------------------
+
+# 5.1 Evaluate
+# ------------------------------
 
 train_score = model.evaluate(tr_gen, verbose=1)
 valid_score = model.evaluate(valid_gen, verbose=1)
@@ -553,109 +683,102 @@ print(f"Test Accuracy: {test_score[1]*100:.2f}%")
 
 
 """
-Train Loss: 0.0085
-Train Accuracy: 99.72%
+Train Loss: 0.0056
+Train Accuracy: 99.88%
 --------------------
-Validation Loss: 0.0151
+Validation Loss: 0.0215
 Validation Accuracy: 99.54%
 --------------------
-Test Loss: 0.0389
-Test Accuracy: 99.39%
+Test Loss: 0.0305
+Test Accuracy: 99.24%
 """
+
 
 preds = model.predict(ts_gen)
 y_pred = np.argmax(preds, axis=1)
 
+
 cm = confusion_matrix(ts_gen.classes, y_pred)
 labels = list(class_dict.keys())
-plt.figure(figsize=(10,8))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=labels, yticklabels=labels)
+plt.figure(figsize=(10, 8))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=labels, yticklabels=labels)
 plt.xlabel('Predicted Label')
 plt.ylabel('Truth Label')
 plt.show()
 
+
 clr = classification_report(ts_gen.classes, y_pred)
 print(clr)
+
 
 """
               precision    recall  f1-score   support
 
-           0       1.00      0.99      0.99       150
-           1       0.97      1.00      0.99       153
+           0       0.99      0.99      0.99       150
+           1       0.99      0.99      0.99       153
            2       1.00      1.00      1.00       203
-           3       1.00      0.99      0.99       150
+           3       0.99      0.99      0.99       150
 
     accuracy                           0.99       656
    macro avg       0.99      0.99      0.99       656
 weighted avg       0.99      0.99      0.99       656
 """
 
-## 5.2 Testing
+
+# ------------------------------
+# 5.2 Testing
+# ------------------------------
+
 def predict_with_tta(model, img_path, num_augmentations=5):
     img = Image.open(img_path)
-    resized_img = img.resize((299, 299))
+    resized_img = img.resize(IMAGE_SIZE)
     img_array = np.asarray(resized_img)
-    
+
     # Create augmented versions
     predictions = []
     aug = get_augmentation()
-    
+
     # Original prediction
     base_pred = model.predict(np.expand_dims(img_array, 0)/255.0)
     predictions.append(base_pred)
-    
+
     # Augmented predictions
     for _ in range(num_augmentations):
         aug_img = aug.random_transform(img_array)
         aug_pred = model.predict(np.expand_dims(aug_img, 0)/255.0)
         predictions.append(aug_pred)
-    
+
     # Average predictions
     return np.mean(predictions, axis=0)
 
+
 def predict(img_path):
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from PIL import Image
     label = list(class_dict.keys())
     plt.figure(figsize=(12, 12))
     img = Image.open(img_path)
-    resized_img = img.resize((299, 299))
-    
+    resized_img = img.resize(IMAGE_SIZE)
+
     # Use TTA for prediction
     predictions = predict_with_tta(model, img_path)
     probs = list(predictions[0])
     labels = label
-    
+
     plt.subplot(2, 1, 1)
     plt.imshow(resized_img)
     plt.subplot(2, 1, 2)
     bars = plt.barh(labels, probs)
     plt.xlabel('Probability', fontsize=15)
     ax = plt.gca()
-    ax.bar_label(bars, fmt = '%.2f')
+    ax.bar_label(bars, fmt='%.2f')
     plt.show()
 
-predict('/kaggle/input/Testing/meningioma/Te-meTr_0000.jpg')
-# it predicted "meningioma" with 1.00 probability
-predict('/kaggle/input/Testing/meningioma/Te-me_0010.jpg')
-# it predicted "meningioma" with 1.00 probability
 
-
-predict('/kaggle/input/Testing/glioma/Te-glTr_0007.jpg')
-# it predicted "glioma" with 1.00 probability
-predict('/kaggle/input/Testing/glioma/Te-gl_0017.jpg')
-# it predicted "glioma" with 1.00 probability
-
-
-predict('/kaggle/input/Testing/notumor/Te-noTr_0001.jpg')
-# it predicted "notumor" with 1.00 probability
-predict('/kaggle/input/Testing/notumor/Te-no_0011.jpg')
-# it predicted "notumor" with 0.99 probability
-
-
-predict('/kaggle/input/Testing/pituitary/Te-piTr_0001.jpg')
-# it predicted "pituitary" with 1.00 probability
-predict('/kaggle/input/Testing/pituitary/Te-pi_0011.jpg')
-# it predicted "pituitary" with 1.00 probability
-
+predict('/brain-tumor-mri-dataset/Testing/meningioma/Te-meTr_0000.jpg')
+# 0.98 meningioma
+predict('/brain-tumor-mri-dataset/Testing/glioma/Te-glTr_0007.jpg')
+# 1.0 glioma
+predict('/brain-tumor-mri-dataset/Testing/notumor/Te-noTr_0001.jpg')
+# 1.0 notumor
+predict('/brain-tumor-mri-dataset/Testing/pituitary/Te-piTr_0001.jpg')
+# 1.0 pituitary
